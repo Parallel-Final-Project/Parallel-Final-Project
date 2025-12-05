@@ -4,30 +4,42 @@
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <chrono> // 計時器庫
-#include <iomanip> // 輸出小數位數
+#include <chrono>
+#include <iomanip>
 
-// --- BKP 核心計算函數 (動態規劃) ---
-int boundedKnapsack(int W, const std::vector<int>& w, const std::vector<int>& v, const std::vector<int>& c) {
+// 定義 long long 為 ll
+typedef long long ll;
+
+// --- BKP 核心計算函數 (修正為 long long) ---
+ll boundedKnapsack(int W, const std::vector<int>& w, const std::vector<int>& v, const std::vector<int>& c) {
     int n = w.size();
-    // 使用 O(W) 空間複雜度
-    std::vector<int> dp_prev(W + 1, 0);
-    std::vector<int> dp_curr(W + 1, 0);
     
-    for (int i = 1; i <= n; i++) {
+    // 使用 long long 防止溢位
+    std::vector<ll> dp_prev(W + 1, 0);
+    std::vector<ll> dp_curr(W + 1, 0);
+    
+    for (int i = 0; i < n; i++) {
+        // 複製上一輪狀態
         dp_curr = dp_prev; 
         
-        int current_weight = w[i - 1];
-        int current_value = v[i - 1];
-        int current_count_limit = c[i - 1];
+        int current_weight = w[i];
+        int current_value = v[i];
+        int current_count_limit = c[i];
 
+        // 優化: 只有當物品有重量時才需要嚴格檢查 k * weight <= j
+        // 如果 weight 為 0 (極少見但可能)，則只受限於 count
         for (int j = 0; j <= W; j++) {
-            // 內層迴圈：遍歷選擇當前物品的數量 k
-            for (int k = 1; k <= current_count_limit && k * current_weight <= j; k++) {
-                dp_curr[j] = std::max(
-                    dp_curr[j],
-                    dp_prev[j - k * current_weight] + k * current_value
-                );
+            
+            // 計算這個容量下，最多能放幾個這種物品
+            int max_k_by_weight = (current_weight > 0) ? (j / current_weight) : current_count_limit;
+            int limit = std::min(current_count_limit, max_k_by_weight);
+
+            for (int k = 1; k <= limit; k++) {
+                // 計算過程強制轉型為 long long
+                ll val = dp_prev[j - k * current_weight] + (ll)k * current_value;
+                if (val > dp_curr[j]) {
+                    dp_curr[j] = val;
+                }
             }
         }
         dp_prev = dp_curr; 
@@ -35,24 +47,14 @@ int boundedKnapsack(int W, const std::vector<int>& w, const std::vector<int>& v,
     return dp_prev[W];
 }
 
-// --- 檔案讀取、計時、寫入邏輯 ---
 void processSingleFileWithTimer(const std::string& inputFileName) {
-    const std::string inputFilePath = "datasets/" + inputFileName;
-    
-    // 輸出檔案名設定
-    std::string baseName = inputFileName;
-    size_t lastDot = inputFileName.find_last_of('.');
-    if (lastDot != std::string::npos) {
-        baseName = inputFileName.substr(0, lastDot);
-    }
-    const std::string outputFilePath = "datasets/" + baseName + "_answer.txt";
+    // (路徑設定部分保持不變，略...)
+    // 假設 inputFileName 就是路徑，或者您自行加上 datasets/
+    std::string inputFilePath = inputFileName; 
     
     std::ifstream inputFile(inputFilePath);
-    std::ofstream outputFile(outputFilePath);
-    std::stringstream inputContent; 
-    
     if (!inputFile.is_open()) {
-        std::cerr << "錯誤: 無法打開輸入檔案 " << inputFilePath << "\n請確認 datasets 資料夾內是否有該檔案。" << std::endl;
+        std::cerr << "錯誤: 無法打開 " << inputFilePath << std::endl;
         return;
     }
     
@@ -60,85 +62,51 @@ void processSingleFileWithTimer(const std::string& inputFileName) {
     int n = 0;
     int W = 0;
     
-    // 1. 讀取第一行：n (物品總類型數) 和 W (背包容量)
-    if (std::getline(inputFile, line)) {
-        inputContent << line << "\n";
+    // 讀取 Header
+    while (std::getline(inputFile, line)) {
+        if (line.empty()) continue;
         std::stringstream ss(line);
-        if (!(ss >> n >> W)) {
-             std::cerr << "格式錯誤: 第一行應為 n W" << std::endl;
-             return;
-        }
-
-        std::vector<int> weights;
-        std::vector<int> values;
-        std::vector<int> counts;
-
-        // 2. 讀取後續行：物品數據 (格式: 重量, 價值, 數量)
-        while (std::getline(inputFile, line)) {
-            if (line.empty()) continue;
-            inputContent << line << "\n";
-            std::stringstream item_ss(line);
-            
-            int wk, pk, bk;
-            char comma; 
-
-            // 嘗試讀取帶逗號或空格的格式
-            // 優先嘗試: 重量 >> 逗號 >> 價值 >> 逗號 >> 數量
-            if (item_ss >> wk >> comma >> pk >> comma >> bk) {
-                weights.push_back(wk);
-                values.push_back(pk);
-                counts.push_back(bk);
-            } 
-            // 備用嘗試: 純空白分隔 (重量 價值 數量)
-            else {
-                std::stringstream fallback_ss(line);
-                if (fallback_ss >> wk >> pk >> bk) {
-                    weights.push_back(wk);
-                    values.push_back(pk);
-                    counts.push_back(bk);
-                }
-            }
-        }
-        
-        std::cout << "正在計算 " << inputFileName << " (n=" << n << ", W=" << W << ")..." << std::endl;
-
-        // --- 🔥 開始計時 ---
-        auto start_time = std::chrono::high_resolution_clock::now();
-
-        // 3. 執行 BKP 演算法
-        int result = boundedKnapsack(W, weights, values, counts);
-
-        // --- 🔥 結束計時 ---
-        auto end_time = std::chrono::high_resolution_clock::now();
-        
-        // 計算耗時 (秒)
-        std::chrono::duration<double> elapsed_seconds = end_time - start_time;
-        double duration = elapsed_seconds.count();
-
-        // 4. 輸出結果到檔案與螢幕
-        outputFile << "--- BKP 運算報告 ---\n";
-        outputFile << "輸入檔案: " << inputFileName << "\n";
-        outputFile << "執行時間: " << std::fixed << std::setprecision(6) << duration << " 秒\n";
-        outputFile << "最大可獲得價值: " << result << "\n";
-        outputFile << "\n--- 輸入數據內容 (格式: 重量, 價值, 數量) ---\n";
-        outputFile << inputContent.str();
-        outputFile << "------------------------\n";
-        
-        std::cout << "✅ 計算完成！" << std::endl;
-        std::cout << "   最大價值: " << result << std::endl;
-        std::cout << "   執行時間: " << duration << " 秒" << std::endl;
-        std::cout << "   結果已寫入: " << outputFilePath << std::endl;
-
-    } else {
-        std::cerr << "錯誤: 檔案是空的。" << std::endl;
+        if (ss >> n >> W) break;
     }
+
+    std::vector<int> weights, values, counts;
+    
+    // 讀取 Items
+    while (std::getline(inputFile, line)) {
+        if (line.empty()) continue;
+        // 處理逗號
+        for (char &c : line) if (c == ',') c = ' ';
+        
+        std::stringstream ss(line);
+        int wk, pk, bk;
+        // 按照您的邏輯: Weight Profit Bound
+        if (ss >> wk >> pk >> bk) {
+            weights.push_back(wk);
+            values.push_back(pk);
+            counts.push_back(bk);
+        }
+    }
+    
+    std::cout << "正在計算 (N=" << weights.size() << ", W=" << W << ")..." << std::endl;
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    // 🔥 修正 3: 接收 long long 結果
+    ll result = boundedKnapsack(W, weights, values, counts);
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> duration = end_time - start_time;
+    
+    std::cout << "✅ 計算完成！" << std::endl;
+    std::cout << "   最大價值: " << result << std::endl;
+    std::cout << "   執行時間: " << std::fixed << std::setprecision(6) << duration.count() << " 秒" << std::endl;
 }
 
-int main() {
-    // 指定要讀取的單一檔案名稱
-    std::string targetFile = "bkp_n5000_bm100_variable_1.txt";
-
-    processSingleFileWithTimer(targetFile);
-
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        std::cout << "Usage: ./cpu_check <filename>" << std::endl;
+        return 1;
+    }
+    processSingleFileWithTimer(argv[1]);
     return 0;
 }
