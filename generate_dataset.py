@@ -72,5 +72,5 @@ def generate_multiple_variable(n: int, b_max: int, repeats: int = 5):
         save_bkp_to_txt(ds, filename)
 
 if __name__ == "__main__":
-    # generate_multiple_fixed(n=5000, b_max=200, repeats=5)
-    generate_multiple_variable(n=5000, b_max=200, repeats=5)
+    generate_multiple_fixed(n=10000, b_max=200, repeats=5)
+    generate_multiple_variable(n=10000, b_max=200, repeats=5)
